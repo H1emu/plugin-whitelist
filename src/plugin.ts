@@ -45,8 +45,6 @@ export default class ServerPlugin extends BasePlugin {
 
     this.registerZoneLoginEventHook(server);
 
-    /* CUSTOM COMMAND TEST */
-
     server.pluginManager.registerCommand(this, server, {
       name: "wlist",
       permissionLevel: PermissionLevels.ADMIN,
@@ -64,6 +62,12 @@ export default class ServerPlugin extends BasePlugin {
     });
   }
 
+  /**
+   * Executes the whitelist command to add a character to the whitelist.
+   * @param server - The ZoneServer2016 instance.
+   * @param client - The client executing the command.
+   * @param args - The command arguments.
+   */
   whitelistCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
     characterId = args[0],
@@ -84,6 +88,12 @@ export default class ServerPlugin extends BasePlugin {
     server.sendChatText(client, `Added ${characterId} to whitelist`);
   }
 
+  /**
+   * Executes the unwhitelist command to remove a character from the whitelist.
+   * @param server - The ZoneServer2016 instance.
+   * @param client - The client executing the command.
+   * @param args - The command arguments.
+   */
   unwhitelistCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
     characterId = args[0],
@@ -103,7 +113,10 @@ export default class ServerPlugin extends BasePlugin {
     server.sendChatText(client, `Removed ${characterId} from whitelist`);
   }
   
-
+  /**
+   * Sets up the whitelist from the MongoDB collection.
+   * @param server - The ZoneServer2016 instance.
+   */
   async setupMongo(server: ZoneServer2016) {
     this.whitelisted = <any>(
       await server._db
@@ -113,23 +126,30 @@ export default class ServerPlugin extends BasePlugin {
     );
   }
 
+  /**
+   * Registers a hook for the ZoneLogin event.
+   *
+   * @param server - The ZoneServer2016 instance.
+   */
   registerZoneLoginEventHook(server: ZoneServer2016) {
     server.pluginManager.hookMethod(this, server, "onZoneLoginEvent", (client: Client) => {
 
-      if(!this.whitelisted[client.character.characterId] && !client.isAdmin) {
-        console.log(`Whitelist reject ${client.character.characterId}`);
-        server.sendData(client, "H1emu.PrintToConsole", {
-          message: `You must be whitelisted to join this server! Your characterId: ${client.character.characterId}`,
-          showConsole: true,
-          clearOutput: true
-        })
-        server.sendData(client, "H1emu.PrintToConsole", {
-          message: `Restart your client after being whitelisted to join.`,
-        })
-        sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connection rejected.`);
-        return false;
+      if(this.whitelisted[client.character.characterId] || client.isAdmin) {
+        sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connected.`);
+        return;
       }
-      sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connected.`);
+
+      console.log(`Whitelist reject ${client.character.characterId}`);
+      server.sendData(client, "H1emu.PrintToConsole", {
+        message: `You must be whitelisted to join this server! Your characterId: ${client.character.characterId}`,
+        showConsole: true,
+        clearOutput: true
+      })
+      server.sendData(client, "H1emu.PrintToConsole", {
+        message: `Restart your client after being whitelisted to join.`,
+      })
+      sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connection rejected.`);
+      return false;
     }, {callBefore: false, callAfter: true})
   }
 }
