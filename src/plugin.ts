@@ -3,6 +3,7 @@ import { ZoneServer2016} from "@h1z1-server/out/servers/ZoneServer2016/zoneserve
 import { ZoneClient2016 as Client } from "@h1z1-server/out/servers/ZoneServer2016/classes/zoneclient";
 
 import axios from 'axios';
+import { PermissionLevels } from "@h1z1-server/out/servers/ZoneServer2016/commands/types";
 
 async function sendWebhookMessage(webhookUrl: string, content: string) {
   try {
@@ -13,13 +14,22 @@ async function sendWebhookMessage(webhookUrl: string, content: string) {
   }
 }
 
+interface WhitelistEntry {
+  serverId: number;
+  characterId: string;
+  whitelistingAdmin: string;
+}
+
 export default class ServerPlugin extends BasePlugin {
   public name = "Whitelist";
-  public description = "This is a template for an h1z1-server plugin.";
-  public author = "H1emu";
+  public description = "Adds a whitelist to your server.";
+  public author = "Meme";
   public version = "0.1";
 
   private joinLogsWebhook!: string;
+
+  // characterId is used so that if a player deletes a character, they can't just change name without being re-whitelisted
+  whitelisted: {[characterId: string]: WhitelistEntry} = {};
 
   /**
    * This method is called by PluginManager, do NOT call this manually
@@ -29,30 +39,97 @@ export default class ServerPlugin extends BasePlugin {
     this.joinLogsWebhook = config.joinLogsWebhook;
   }
   
-  public init(server: ZoneServer2016): void {
+  public async init(server: ZoneServer2016): Promise<void> {
 
-    const onZoneLoginEvent = server.onZoneLoginEvent;
+    await this.setupMongo(server);
 
-    server.onZoneLoginEvent = (client: Client) => {
+    this.registerZoneLoginEventHook(server);
 
-      // setup mongo whitelist table + whitelist command ingame and rcon command eventually
+    /* CUSTOM COMMAND TEST */
 
-      
-      if(client.loginSessionId == "0x7e71738cb63c735e") {
-        console.log(`Whitelist reject ${client.loginSessionId}`);
-        //server.sendData(client, "LoginFailed", {});
+    server.pluginManager.registerCommand(this, server, {
+      name: "wlist",
+      permissionLevel: PermissionLevels.ADMIN,
+      execute: (server: ZoneServer2016, client: Client, args: Array<string>) => {
+        this.whitelistCommandExecute(server, client, args);
+      }
+    });
+
+    server.pluginManager.registerCommand(this, server, {
+      name: "unwhitelist",
+      permissionLevel: PermissionLevels.ADMIN,
+      execute: (server: ZoneServer2016, client: Client, args: Array<string>) => {
+        this.unwhitelistCommandExecute(server, client, args);
+      }
+    });
+  }
+
+  whitelistCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
+    const collection = server._db?.collection("whitelist"),
+    characterId = args[0],
+    whitelistEntry: WhitelistEntry = {
+      serverId: server._worldId,
+      characterId: characterId,
+      whitelistingAdmin: client.character.name
+    },
+    found = this.whitelisted[characterId];
+
+    if(!!found) {
+      server.sendChatText(client, `CharacterId ${characterId} is already whitelisted`);
+      return;
+    }
+
+    collection.insertOne(whitelistEntry)
+    this.whitelisted[characterId] = whitelistEntry;
+    server.sendChatText(client, `Added ${characterId} to whitelist`);
+  }
+
+  unwhitelistCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
+    const collection = server._db?.collection("whitelist"),
+    characterId = args[0],
+    found = this.whitelisted[characterId];
+
+    if(!found) {
+      server.sendChatText(client, `CharacterId ${characterId} not found in whitelist`);
+      return;
+    }
+
+    collection.deleteOne({
+      serverId: server._worldId,
+      characterId: args[0],
+    });
+    delete this.whitelisted[characterId];
+
+    server.sendChatText(client, `Removed ${characterId} from whitelist`);
+  }
+  
+
+  async setupMongo(server: ZoneServer2016) {
+    this.whitelisted = <any>(
+      await server._db
+        ?.collection("whitelist")
+        .find({ serverId: server._worldId })
+        .toArray()
+    );
+  }
+
+  registerZoneLoginEventHook(server: ZoneServer2016) {
+    server.pluginManager.hookMethod(this, server, "onZoneLoginEvent", (client: Client) => {
+
+      if(!this.whitelisted[client.character.characterId] && !client.isAdmin) {
+        console.log(`Whitelist reject ${client.character.characterId}`);
         server.sendData(client, "H1emu.PrintToConsole", {
-          message: `You must be whitelisted to join this server! Your zoneId: ${client.loginSessionId}`,
+          message: `You must be whitelisted to join this server! Your characterId: ${client.character.characterId}`,
           showConsole: true,
           clearOutput: true
         })
-        sendWebhookMessage(this.joinLogsWebhook, `${client.loginSessionId} connection rejected.`);
-        return;
+        server.sendData(client, "H1emu.PrintToConsole", {
+          message: `Restart your client after being whitelisted to join.`,
+        })
+        sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connection rejected.`);
+        return false;
       }
-      sendWebhookMessage(this.joinLogsWebhook, `${client.loginSessionId} connected.`);
-      onZoneLoginEvent.call(server, client);
-    }
-
+      sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connected.`);
+    }, {callBefore: false, callAfter: true})
   }
-
 }
