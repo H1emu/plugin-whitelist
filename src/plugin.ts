@@ -128,7 +128,6 @@ export default class ServerPlugin extends BasePlugin {
 
   /**
    * Registers a hook for the ZoneLogin event.
-   *
    * @param server - The ZoneServer2016 instance.
    */
   registerZoneLoginEventHook(server: ZoneServer2016) {
