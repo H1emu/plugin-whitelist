@@ -40,6 +40,10 @@ export default class ServerPlugin extends BasePlugin {
   }
   
   public async init(server: ZoneServer2016): Promise<void> {
+    if(server._soloMode) {
+      console.error("[Whitelist] Whitelist disabled due to server being in solo mode!")
+      return;
+    }
 
     await this.setupMongo(server);
 
