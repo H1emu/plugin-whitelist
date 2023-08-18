@@ -5,3 +5,7 @@
 
 # If there is no plugin folder in the server directory
 - Run the server for the first time and the folder will be created
+
+
+# How to use
+- Use /wlinfo in-game for plugin info, whitelisted character count, and command list.
