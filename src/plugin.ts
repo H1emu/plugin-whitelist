@@ -29,7 +29,7 @@ export default class ServerPlugin extends BasePlugin {
   public name = "Whitelist";
   public description = "Adds a whitelist to your server.";
   public author = "Meme";
-  public version = "0.1";
+  public version = "0.2";
 
   private joinLogsWebhook!: string;
 
@@ -180,12 +180,14 @@ export default class ServerPlugin extends BasePlugin {
    * @param server - The ZoneServer2016 instance.
    */
   async setupMongo(server: ZoneServer2016) {
-    this.whitelisted = <any>(
-      await server._db
-        ?.collection("whitelist")
-        .find({ serverId: server._worldId })
-        .toArray()
-    );
+    const whitelisted = (await server._db
+      ?.collection("whitelist")
+      .find({ serverId: server._worldId })
+      .toArray()) as any;
+
+    whitelisted.forEach((entry: WhitelistEntry) => {
+      this.whitelisted[entry.characterId] = entry;
+    });
   }
 
   /**
