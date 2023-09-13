@@ -145,8 +145,7 @@ export default class ServerPlugin extends BasePlugin {
    */
   async wlinfoCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
-    whitelisted = await collection.countDocuments() || -1,
-    commands = (this.commands.map((command)=> {return `/${command.name}: ${command.description}`}));
+    whitelisted = await collection.countDocuments() || -1;
 
     server.sendData(client, "H1emu.PrintToConsole", {
       message: `${this.name} plugin version: ${this.version}\nCurrently whitelisted characters: ${whitelisted}\nCommands:\n`,
@@ -154,14 +153,7 @@ export default class ServerPlugin extends BasePlugin {
       clearOutput: true
     });
 
-    // workaround for possible h1z1 console text limit?
-    commands.forEach((command)=> {
-      server.sendData(client, "H1emu.PrintToConsole", {
-        message: `${command}`,
-        showConsole: true,
-        clearOutput: false
-      });
-    })
+    server.pluginManager.listCommands(server, client, this);
   }
   
   /**
