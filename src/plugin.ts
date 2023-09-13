@@ -20,22 +20,17 @@ interface WhitelistEntry {
   whitelistingAdmin: string;
 }
 
-// will eventually integrated in base h1emu repo
-interface ExtendedCommand extends Command {
-  description: string;
-}
-
 export default class ServerPlugin extends BasePlugin {
   public name = "Whitelist";
   public description = "Adds a whitelist to your server.";
   public author = "Meme";
-  public version = "0.2";
+  public version = "0.3";
 
   private joinLogsWebhook!: string;
 
   // characterId is used so that if a player deletes a character, they can't just change name without being re-whitelisted
   public whitelisted: {[characterId: string]: WhitelistEntry} = {};
-  public commands: Array<ExtendedCommand> = [
+  public commands = [
     {
       name: "wlinfo",
       description: "Displays info about the whitelist plugin.",
@@ -79,12 +74,6 @@ export default class ServerPlugin extends BasePlugin {
     await this.setupMongo(server);
 
     this.registerZoneLoginEventHook(server);
-    
-    // manually register all commands here for now, this will eventually be handled in the base h1emu plugin manager
-    this.commands.forEach((command)=> {
-      server.pluginManager.registerCommand(this, server, command);
-    })
-
   }
 
   /**
