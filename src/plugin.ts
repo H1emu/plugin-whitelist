@@ -16,26 +16,21 @@ async function sendWebhookMessage(webhookUrl: string, content: string) {
 
 interface WhitelistEntry {
   serverId: number;
-  characterId: string;
+  guid: string;
   whitelistingAdmin: string;
-}
-
-// will eventually integrated in base h1emu repo
-interface ExtendedCommand extends Command {
-  description: string;
 }
 
 export default class ServerPlugin extends BasePlugin {
   public name = "Whitelist";
   public description = "Adds a whitelist to your server.";
   public author = "Meme";
-  public version = "0.2";
+  public version = "0.3";
 
   private joinLogsWebhook!: string;
 
-  // characterId is used so that if a player deletes a character, they can't just change name without being re-whitelisted
-  public whitelisted: {[characterId: string]: WhitelistEntry} = {};
-  public commands: Array<ExtendedCommand> = [
+  // guid is used so that if a player deletes a character, they can't just change name without being re-whitelisted
+  public whitelisted: {[guid: string]: WhitelistEntry} = {};
+  public commands = [
     {
       name: "wlinfo",
       description: "Displays info about the whitelist plugin.",
@@ -46,7 +41,7 @@ export default class ServerPlugin extends BasePlugin {
     },
     {
       name: "wladd",
-      description: "Adds a user by characterId to the whitelist.",
+      description: "Adds a user by guid to the whitelist.",
       permissionLevel: PermissionLevels.ADMIN,
       execute: (server: ZoneServer2016, client: Client, args: Array<string>) => {
         this.wladdCommandExecute(server, client, args);
@@ -54,7 +49,7 @@ export default class ServerPlugin extends BasePlugin {
     },
     {
       name: "wlremove",
-      description: "Removes a user by characterId from the whitelist.",
+      description: "Removes a user by guid from the whitelist.",
       permissionLevel: PermissionLevels.ADMIN,
       execute: (server: ZoneServer2016, client: Client, args: Array<string>) => {
         this.wlremoveCommandExecute(server, client, args);
@@ -79,12 +74,6 @@ export default class ServerPlugin extends BasePlugin {
     await this.setupMongo(server);
 
     this.registerZoneLoginEventHook(server);
-    
-    // manually register all commands here for now, this will eventually be handled in the base h1emu plugin manager
-    this.commands.forEach((command)=> {
-      server.pluginManager.registerCommand(this, server, command);
-    })
-
   }
 
   /**
@@ -95,27 +84,27 @@ export default class ServerPlugin extends BasePlugin {
    */
   wladdCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
-    characterId = args[0],
+    guid = args[0],
     whitelistEntry: WhitelistEntry = {
       serverId: server._worldId,
-      characterId: characterId,
+      guid: guid,
       whitelistingAdmin: client.character.name
     },
-    found = this.whitelisted[characterId];
+    found = this.whitelisted[guid];
      
     if(!args[0]) {
-      server.sendChatText(client, "Missing characterId.");
+      server.sendChatText(client, "Missing guid.");
       return;
     }
 
     if(!!found) {
-      server.sendChatText(client, `CharacterId ${characterId} is already whitelisted`);
+      server.sendChatText(client, `guid ${guid} is already whitelisted`);
       return;
     }
 
     collection.insertOne(whitelistEntry)
-    this.whitelisted[characterId] = whitelistEntry;
-    server.sendChatText(client, `Added ${characterId} to whitelist`);
+    this.whitelisted[guid] = whitelistEntry;
+    server.sendChatText(client, `Added ${guid} to whitelist`);
   }
 
   /**
@@ -126,26 +115,26 @@ export default class ServerPlugin extends BasePlugin {
    */
   wlremoveCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
-    characterId = args[0],
-    found = this.whitelisted[characterId];
+    guid = args[0],
+    found = this.whitelisted[guid];
 
     if(!args[0]) {
-      server.sendChatText(client, "Missing characterId.");
+      server.sendChatText(client, "Missing guid.");
       return;
     }
 
     if(!found) {
-      server.sendChatText(client, `CharacterId ${characterId} not found in whitelist`);
+      server.sendChatText(client, `guid ${guid} not found in whitelist`);
       return;
     }
 
     collection.deleteOne({
       serverId: server._worldId,
-      characterId: args[0],
+      guid: args[0],
     });
-    delete this.whitelisted[characterId];
+    delete this.whitelisted[guid];
 
-    server.sendChatText(client, `Removed ${characterId} from whitelist`);
+    server.sendChatText(client, `Removed ${guid} from whitelist`);
   }
 
   /**
@@ -156,8 +145,7 @@ export default class ServerPlugin extends BasePlugin {
    */
   async wlinfoCommandExecute(server: ZoneServer2016, client: Client, args: Array<string>) {
     const collection = server._db?.collection("whitelist"),
-    whitelisted = await collection.countDocuments() || -1,
-    commands = (this.commands.map((command)=> {return `/${command.name}: ${command.description}`}));
+    whitelisted = await collection.countDocuments() || -1;
 
     server.sendData(client, "H1emu.PrintToConsole", {
       message: `${this.name} plugin version: ${this.version}\nCurrently whitelisted characters: ${whitelisted}\nCommands:\n`,
@@ -165,14 +153,7 @@ export default class ServerPlugin extends BasePlugin {
       clearOutput: true
     });
 
-    // workaround for possible h1z1 console text limit?
-    commands.forEach((command)=> {
-      server.sendData(client, "H1emu.PrintToConsole", {
-        message: `${command}`,
-        showConsole: true,
-        clearOutput: false
-      });
-    })
+    server.pluginManager.listCommands(server, client, this);
   }
   
   /**
@@ -186,7 +167,7 @@ export default class ServerPlugin extends BasePlugin {
       .toArray()) as any;
 
     whitelisted.forEach((entry: WhitelistEntry) => {
-      this.whitelisted[entry.characterId] = entry;
+      this.whitelisted[entry.guid] = entry;
     });
   }
 
@@ -197,21 +178,21 @@ export default class ServerPlugin extends BasePlugin {
   registerZoneLoginEventHook(server: ZoneServer2016) {
     server.pluginManager.hookMethod(this, server, "onZoneLoginEvent", (client: Client) => {
 
-      if(this.whitelisted[client.character.characterId] || client.isAdmin) {
-        sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connected.`);
+      if(this.whitelisted[client.loginSessionId] || client.isAdmin) {
+        sendWebhookMessage(this.joinLogsWebhook, `${client.loginSessionId} connected.`);
         return;
       }
 
-      console.log(`Whitelist reject ${client.character.characterId}`);
+      console.log(`Whitelist reject ${client.loginSessionId}`);
       server.sendData(client, "H1emu.PrintToConsole", {
-        message: `You must be whitelisted to join this server! Your characterId: ${client.character.characterId}`,
+        message: `You must be whitelisted to join this server! Your guid: ${client.loginSessionId}`,
         showConsole: true,
         clearOutput: true
       })
       server.sendData(client, "H1emu.PrintToConsole", {
         message: `Restart your client after being whitelisted to join.`,
       })
-      sendWebhookMessage(this.joinLogsWebhook, `${client.character.characterId} connection rejected.`);
+      sendWebhookMessage(this.joinLogsWebhook, `${client.loginSessionId} connection rejected.`);
       return false;
     }, {callBefore: false, callAfter: true})
   }
